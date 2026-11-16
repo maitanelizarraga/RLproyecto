@@ -30,17 +30,25 @@ class Game2048Env(gym.Env):
 
     def __init__(
         self,
-        size=4,
-        target_tile=2048,
+        size=4, #la tabla es 4x4 de origen
+        target_tile=2048, #ficha objetivo a alcanzar y termina el juego
+
         observation_type="log2",
-        reward_type="raw",
+        reward_type="raw", 
+
+        #penalizacion por movimientos invalidos
         invalid_penalty=0.0,
+
+        #bonus por dejar casillas vacias y que las ficha mayor esten en la esquina(mejor estrategia de juego)
         empty_bonus=0.1,
         corner_bonus=0.1,
+
+        #visualización
         render_mode=None
     ):
         super().__init__()
 
+        #compureba que los valores seleccionados para el nviroment sean validos
         assert size >= 2
         assert target_tile >= 2
         assert observation_type in ["raw", "log2", "one_hot"]
@@ -88,7 +96,7 @@ class Game2048Env(gym.Env):
 
         elif observation_type == "one_hot":
 
-            self.num_channels = 32
+            self.num_channels = 12 #una capa por posible valor(incluyendo vacio) siendo el max 2048
 
             self.observation_space = spaces.Box(
                 low=0.0,
@@ -100,7 +108,8 @@ class Game2048Env(gym.Env):
     # --------------------------------------------------
     # OBSERVATIONS
     # --------------------------------------------------
-
+    
+    #devuelve al agente la tabla según lo que se haya especificado
     def _get_obs(self):
 
         if self.observation_type == "raw":
@@ -109,7 +118,7 @@ class Game2048Env(gym.Env):
         if self.observation_type == "log2":
 
             return np.log2(
-                self.board.astype(np.float32) + 1.0
+                self.board.astype(np.float32) + 1.0 #suma para que el log no de error en valores cero
             ).astype(np.float32)
 
         if self.observation_type == "one_hot":
@@ -146,6 +155,7 @@ class Game2048Env(gym.Env):
     # GAME LOGIC
     # --------------------------------------------------
 
+    #añade la nueva ficha en un espacio aleatorio de las celdas vacias (90 para valor 2 y 10 para el 4)
     def _add_new_tile(self):
 
         empty_cells = np.argwhere(self.board == 0)
@@ -161,14 +171,16 @@ class Game2048Env(gym.Env):
 
         self.board[row, col] = value
 
+
+    #funcion union d fichas
     def _merge(self, line):
 
-        nonzero = line[line != 0]
+        nonzero = line[line != 0] #detecta ceros en la linea
 
         merged = []
-        score = 0
+        score = 0 #puntos que va a generar la union en ese mov
 
-        i = 0
+        i = 0 #inidca que posicion estamos comprobando
 
         while i < len(nonzero):
 
@@ -182,7 +194,7 @@ class Game2048Env(gym.Env):
                 merged.append(new_value)
                 score += new_value
 
-                i += 2
+                i += 2 #indica que si dos fichas se acaban de fusionar, estas no sue pueden usar pa volver a hacer una nueva fusion
 
             else:
 
@@ -197,6 +209,7 @@ class Game2048Env(gym.Env):
             merged, dtype=np.int32
         ), score
 
+    #para poder reutilizar el merge ya uqe esta solo definido hacia la izq
     def _move_board(self, board, action):
 
         board = board.copy()
@@ -237,6 +250,8 @@ class Game2048Env(gym.Env):
 
         return board.copy(), total_score
 
+
+    #calcula como queda la tabla resultante y si es igual que al principio el mov pasa a no valido
     def _move(self, action):
 
         new_board, score = self._move_board(
