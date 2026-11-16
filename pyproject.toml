@@ -1,0 +1,18 @@
+[project]
+name = "rlproyecto"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "maitanelizarraga", email = "maitane.lizarraga@opendeusto.es" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "gymnasium>=1.4.0",
+    "numpy>=2.5.5",
+    "requests>=2.34.2",
+    "sb3-contrib>=2.9.2",
+    "stable-baselines3>=2.9.2",
+]
+
+
