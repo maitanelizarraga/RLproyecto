@@ -1,4 +1,3 @@
-
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
@@ -34,7 +33,7 @@ class Game2048Env(gym.Env):
         target_tile=2048, #ficha objetivo a alcanzar y termina el juego
 
         observation_type="log2",
-        reward_type="raw", 
+        reward_type="raw",
 
         #penalizacion por movimientos invalidos
         invalid_penalty=0.0,
@@ -42,6 +41,9 @@ class Game2048Env(gym.Env):
         #bonus por dejar casillas vacias y que las ficha mayor esten en la esquina(mejor estrategia de juego)
         empty_bonus=0.1,
         corner_bonus=0.1,
+
+        #limite de pasos por episodio (cuenta tambien los movimientos invalidos)
+        max_episode_steps=2000,
 
         #visualización
         render_mode=None
@@ -66,11 +68,14 @@ class Game2048Env(gym.Env):
         self.empty_bonus = empty_bonus
         self.corner_bonus = corner_bonus
 
+        self.max_episode_steps = max_episode_steps
+
         self.render_mode = render_mode
 
         self.board = None
         self.score = 0
         self.steps = 0
+        self.total_steps = 0 #todos los pasos, validos e invalidos (para truncar el episodio)
 
         # Actions: left, right, up, down
         self.action_space = spaces.Discrete(4)
@@ -108,7 +113,7 @@ class Game2048Env(gym.Env):
     # --------------------------------------------------
     # OBSERVATIONS
     # --------------------------------------------------
-    
+
     #devuelve al agente la tabla según lo que se haya especificado
     def _get_obs(self):
 
@@ -225,7 +230,7 @@ class Game2048Env(gym.Env):
             board = board.T
 
         elif action == 3:
-            board = np.flipud(board.T)
+            board = np.fliplr(board.T) #CORREGIDO: antes flipud(board.T), que mezclaba las columnas
 
         total_score = 0
 
@@ -246,7 +251,7 @@ class Game2048Env(gym.Env):
             board = board.T
 
         elif action == 3:
-            board = np.flipud(board.T)
+            board = np.fliplr(board).T #CORREGIDO: inversa exacta de fliplr(board.T)
 
         return board.copy(), total_score
 
@@ -387,6 +392,7 @@ class Game2048Env(gym.Env):
 
         self.score = 0
         self.steps = 0
+        self.total_steps = 0
 
         self._add_new_tile()
         self._add_new_tile()
@@ -408,6 +414,8 @@ class Game2048Env(gym.Env):
         if not self.action_space.contains(action):
             raise ValueError("Invalid action")
 
+        self.total_steps += 1
+
         merge_score, valid_move = self._move(action)
 
         reward = self._get_reward(
@@ -419,7 +427,11 @@ class Game2048Env(gym.Env):
             or np.max(self.board) >= self.target_tile
         )
 
-        truncated = False
+        #CORREGIDO: antes era siempre False y un movimiento invalido repetido no acababa nunca
+        truncated = bool(
+            self.total_steps >= self.max_episode_steps
+            and not terminated
+        )
 
         info = {
             "score": self.score,
