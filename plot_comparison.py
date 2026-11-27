@@ -119,6 +119,20 @@ def _colores(n: int) -> List:
     return [base[i % len(base)] for i in range(n)]
 
 
+def _media_std(resumen, algo, modo, reward):
+    """Media de la recompensa de las filas (semillas) de una combinación.
+    Barra de error: desviación entre semillas si hay varias; si solo hay
+    una, la desviación entre episodios de esa variante."""
+    filas = [r for r in resumen
+             if r["algo"] == algo and r["modo"] == modo and r["reward"] == reward]
+    if not filas:
+        return 0.0, 0.0
+    medias = [r["recompensa_media"] for r in filas]
+    if len(filas) == 1:
+        return medias[0], filas[0]["recompensa_std"]
+    return float(np.mean(medias)), float(np.std(medias))
+
+
 def _guardar(fig, carpeta: str, nombre: str):
     os.makedirs(carpeta, exist_ok=True)
     ruta = os.path.join(carpeta, nombre)
@@ -165,7 +179,8 @@ def plot_boxplot_max_tile(episodios, carpeta):
     datos = [por_var[n] for n in nombres]
 
     fig, ax = plt.subplots(figsize=(max(10, 0.5 * len(nombres) + 4), 5))
-    ax.boxplot(datos, labels=nombres, showmeans=True)
+    ax.boxplot(datos, showmeans=True)
+    ax.set_xticks(range(1, len(nombres) + 1))
     ax.set_xticklabels(nombres, rotation=60, ha="right", fontsize=8)
     ax.set_ylabel("Máxima ficha alcanzada")
     ax.set_title("Distribución de la ficha máxima por variante")
@@ -199,10 +214,12 @@ def plot_heatmap_recompensa(resumen, carpeta):
     columnas = sorted({f"{r['modo']}|{r['reward']}" for r in resumen})
 
     tabla = np.full((len(algoritmos), len(columnas)), np.nan)
-    for r in resumen:
-        i = algoritmos.index(r["algo"])
-        j = columnas.index(f"{r['modo']}|{r['reward']}")
-        tabla[i, j] = r["recompensa_media"]
+    for i, alg in enumerate(algoritmos):
+        for j, col in enumerate(columnas):
+            modo, reward = col.split("|")
+            if any(r["algo"] == alg and r["modo"] == modo and r["reward"] == reward
+                   for r in resumen):
+                tabla[i, j] = _media_std(resumen, alg, modo, reward)[0]
 
     fig, ax = plt.subplots(
         figsize=(1.4 * len(columnas) + 4, 0.9 * len(algoritmos) + 3)
@@ -240,15 +257,9 @@ def plot_comparacion_por_algoritmo(resumen, carpeta):
         modo, reward = combo.split("|")
         valores, errores = [], []
         for alg in algoritmos:
-            filas = [r for r in resumen
-                     if r["algo"] == alg and r["modo"] == modo
-                     and r["reward"] == reward]
-            if filas:
-                valores.append(filas[0]["recompensa_media"])
-                errores.append(filas[0]["recompensa_std"])
-            else:
-                valores.append(0.0)
-                errores.append(0.0)
+            media, error = _media_std(resumen, alg, modo, reward)
+            valores.append(media)
+            errores.append(error)
         ax.bar(x + k * ancho - 0.4 + ancho / 2, valores, ancho,
                yerr=errores, capsize=3,
                label=f"{modo} / {reward}", color=colores[k])
@@ -283,15 +294,9 @@ def plot_comparacion_por_curriculum(resumen, carpeta):
         for k, reward in enumerate(rewards):
             valores, errores = [], []
             for alg in algoritmos:
-                filas = [r for r in resumen
-                         if r["algo"] == alg and r["modo"] == modo
-                         and r["reward"] == reward]
-                if filas:
-                    valores.append(filas[0]["recompensa_media"])
-                    errores.append(filas[0]["recompensa_std"])
-                else:
-                    valores.append(0.0)
-                    errores.append(0.0)
+                media, error = _media_std(resumen, alg, modo, reward)
+                valores.append(media)
+                errores.append(error)
             ax.bar(x + k * ancho - ancho / 2, valores, ancho,
                    yerr=errores, capsize=3,
                    label=reward, color=colores.get(reward, None))
@@ -320,13 +325,11 @@ def plot_heatmap_reward_curriculum(resumen, carpeta):
     ]
 
     tabla = np.full((len(algoritmos), len(columnas)), np.nan)
-    for r in resumen:
-        try:
-            j = columnas.index((r["modo"], r["reward"]))
-        except ValueError:
-            continue
-        i = algoritmos.index(r["algo"])
-        tabla[i, j] = r["recompensa_media"]
+    for i, alg in enumerate(algoritmos):
+        for j, (modo, reward) in enumerate(columnas):
+            if any(r["algo"] == alg and r["modo"] == modo and r["reward"] == reward
+                   for r in resumen):
+                tabla[i, j] = _media_std(resumen, alg, modo, reward)[0]
 
     fig, ax = plt.subplots(figsize=(1.6 * len(columnas) + 4,
                                     0.9 * len(algoritmos) + 3))
@@ -350,6 +353,40 @@ def plot_heatmap_reward_curriculum(resumen, carpeta):
 # MAIN (modo script)
 # ============================================================
 
+def generar_plots(ruta_resumen: str, ruta_episodios: str, outdir: str):
+    """Carga los CSV y genera todas las gráficas en `outdir`."""
+    print("Cargando CSVs...")
+    resumen = enriquecer(cargar_resumen(ruta_resumen))
+    episodios = cargar_episodios(ruta_episodios)
+    print(f"  variantes en resumen: {len(resumen)}")
+    print(f"  filas por episodio:   {len(episodios)}")
+
+    os.makedirs(outdir, exist_ok=True)
+
+    print("\nGenerando plots...")
+    plot_barras_metrica(resumen, "recompensa_media", "Recompensa media",
+                        "Recompensa media por variante (mayor = mejor)",
+                        outdir, "comparacion_recompensa.png",
+                        fmt=".2f", error_col="recompensa_std")
+    plot_barras_metrica(resumen, "max_tile_media", "Ficha máxima media",
+                        "Ficha máxima media por variante (mayor = mejor)",
+                        outdir, "comparacion_max_tile.png", fmt=".1f")
+    plot_barras_metrica(resumen, "tasa_ganado", "Tasa de victoria",
+                        "Porcentaje de partidas ganadas (llegar a 2048)",
+                        outdir, "comparacion_tasa_ganado.png", fmt=".2%")
+    plot_barras_metrica(resumen, "pasos_media", "Pasos medios",
+                        "Duración media de las partidas",
+                        outdir, "comparacion_pasos.png", fmt=".1f")
+    plot_boxplot_max_tile(episodios, outdir)
+    plot_curva_aprendizaje(episodios, outdir)
+    plot_heatmap_recompensa(resumen, outdir)
+    plot_comparacion_por_algoritmo(resumen, outdir)
+    plot_comparacion_por_curriculum(resumen, outdir)
+    plot_heatmap_reward_curriculum(resumen, outdir)
+
+    print(f"\nListo. Figuras en {outdir}/")
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Genera plots comparativos a partir de los CSV de evaluación."
@@ -362,37 +399,7 @@ def main():
                     default=os.path.join(CARPETA_RESULTS, "plots"))
     args = ap.parse_args()
 
-    print("Cargando CSVs...")
-    resumen = enriquecer(cargar_resumen(args.summary))
-    episodios = cargar_episodios(args.results)
-    print(f"  variantes en resumen: {len(resumen)}")
-    print(f"  filas por episodio:   {len(episodios)}")
-
-    os.makedirs(args.outdir, exist_ok=True)
-
-    print("\nGenerando plots...")
-    plot_barras_metrica(resumen, "recompensa_media", "Recompensa media",
-                        "Recompensa media por variante (mayor = mejor)",
-                        args.outdir, "comparacion_recompensa.png",
-                        fmt=".2f", error_col="recompensa_std")
-    plot_barras_metrica(resumen, "max_tile_media", "Ficha máxima media",
-                        "Ficha máxima media por variante (mayor = mejor)",
-                        args.outdir, "comparacion_max_tile.png", fmt=".1f")
-    plot_barras_metrica(resumen, "tasa_ganado", "Tasa de victoria",
-                        "Porcentaje de partidas ganadas (llegar a 2048)",
-                        args.outdir, "comparacion_tasa_ganado.png", fmt=".2%")
-    plot_barras_metrica(resumen, "pasos_media", "Pasos medios",
-                        "Duración media de las partidas",
-                        args.outdir, "comparacion_pasos.png", fmt=".1f")
-    plot_boxplot_max_tile(episodios, args.outdir)
-    plot_curva_aprendizaje(episodios, args.outdir)
-    plot_heatmap_recompensa(resumen, args.outdir)
-    plot_comparacion_por_algoritmo(resumen, args.outdir)
-    plot_comparacion_por_curriculum(resumen, args.outdir)
-    plot_heatmap_reward_curriculum(resumen, args.outdir)
-
-    print(f"\nListo. Figuras en {args.outdir}/")
-
+    generar_plots(args.summary, args.results, args.outdir)
 
 if __name__ == "__main__":
     main()

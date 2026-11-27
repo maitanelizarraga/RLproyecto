@@ -79,7 +79,7 @@ def entrenar(timesteps, eval_freq, seed, curriculum,
     # -------- Nombres de ficheros / carpetas --------
     nombre = nombre_ejecucion(reward_type, curriculum, seed)
 
-    os.makedirs("models", exist_ok=True)
+    os.makedirs("models/results", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
 
     ruta_modelo = f"models/results/{nombre}"

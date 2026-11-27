@@ -1,4 +1,3 @@
-
 """
 Evalúa modelos de 2048 y guarda CSV con las métricas.
 
@@ -108,13 +107,15 @@ def evaluar_variante(
             total_reward += float(reward)
             steps += 1
 
+        max_tile = int(info.get("max_tile", 0))
         filas.append({
             "variante": nombre,
             "episodio": ep,
             "recompensa": total_reward,
             "pasos": steps,
-            "max_tile": int(info.get("max_tile", 0)),
-            "gano": int(bool(info.get("won", False))),
+            "max_tile": max_tile,
+            # El entorno no devuelve "won" en info: se gana al alcanzar target_tile
+            "gano": int(max_tile >= env.target_tile),
             "puntuacion": int(info.get("score", 0)),
         })
 
@@ -158,6 +159,33 @@ def resumir(filas: List[dict]) -> List[dict]:
 # MODO SCRIPT (evaluación puntual)
 # ============================================================
 
+def guardar_csv(filas: List[dict], resumen: List[dict],
+                ruta_episodios: str, ruta_resumen: str):
+    """Guarda el CSV por episodio y el CSV resumen."""
+    os.makedirs(os.path.dirname(ruta_episodios) or ".", exist_ok=True)
+    os.makedirs(os.path.dirname(ruta_resumen) or ".", exist_ok=True)
+
+    campos = ["variante", "episodio", "recompensa", "pasos",
+              "max_tile", "gano", "puntuacion"]
+    with open(ruta_episodios, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=campos)
+        w.writeheader()
+        for fila in filas:
+            w.writerow(fila)
+
+    campos_resumen = [
+        "variante", "episodios",
+        "recompensa_media", "recompensa_std",
+        "pasos_media", "max_tile_media", "max_tile_max",
+        "tasa_ganado", "puntuacion_media",
+    ]
+    with open(ruta_resumen, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=campos_resumen)
+        w.writeheader()
+        for fila in resumen:
+            w.writerow(fila)
+
+
 def parsear_variantes(cadena: str) -> List[Tuple[str, str]]:
     variantes = []
     for item in cadena.split(","):
@@ -190,9 +218,6 @@ def main():
     ap.add_argument("--seed", type=int, default=1234)
     args = ap.parse_args()
 
-    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
-    os.makedirs(os.path.dirname(args.out_summary) or ".", exist_ok=True)
-
     pares = parsear_variantes(args.variants)
     print(f"Variantes a evaluar: {len(pares)}")
     for n, r in pares:
@@ -208,29 +233,10 @@ def main():
         todas.extend(filas)
         print(f"  episodios: {len(filas)}")
 
-    # CSV por episodio
-    campos = ["variante", "episodio", "recompensa", "pasos",
-              "max_tile", "gano", "puntuacion"]
-    with open(args.out, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=campos)
-        w.writeheader()
-        for fila in todas:
-            w.writerow(fila)
-    print(f"\nCSV por episodio: {args.out}")
-
-    # CSV resumen
+    # CSVs
     resumen = resumir(todas)
-    campos_resumen = [
-        "variante", "episodios",
-        "recompensa_media", "recompensa_std",
-        "pasos_media", "max_tile_media", "max_tile_max",
-        "tasa_ganado", "puntuacion_media",
-    ]
-    with open(args.out_summary, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=campos_resumen)
-        w.writeheader()
-        for fila in resumen:
-            w.writerow(fila)
+    guardar_csv(todas, resumen, args.out, args.out_summary)
+    print(f"\nCSV por episodio: {args.out}")
     print(f"CSV resumen:      {args.out_summary}")
 
     # Tabla consola
