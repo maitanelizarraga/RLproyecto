@@ -81,7 +81,7 @@ def entrenar(timesteps, eval_freq, seed, curriculum,
     os.makedirs("models", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
 
-    ruta_modelo = f"models/{nombre}"
+    ruta_modelo = f"models/results/{nombre}"
 
     # -------- Definición de etapas (target_tile, reward_type) --------
     # El reward_type es el mismo en todas las etapas.
