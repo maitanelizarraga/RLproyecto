@@ -27,7 +27,7 @@ import os
 import time
 import traceback
 
-CARPETA_MODELOS = "models"
+CARPETA_MODELOS = "models/"
 
 # nombre corto -> archivo (QR-DQN.py lleva guion, así que se carga por ruta)
 ALGORITMOS = {
@@ -101,7 +101,7 @@ def main():
     print("=" * 70)
 
     modulos = {}
-    resultados = []   # (nombre, estado, segundos)
+    resultados = []   
 
     for i, (algoritmo, recompensa, curriculum, semilla) in enumerate(plan, 1):
         if algoritmo not in modulos:
