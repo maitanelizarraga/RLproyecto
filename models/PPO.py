@@ -26,9 +26,7 @@ def crear_entorno(target_tile=2048, seed=0, reward_type="raw"):
     seed : int
         Semilla para reproducibilidad. Se pasa al VecEnv.
     reward_type : str
-        🔧 MEJORA: ahora se parametriza.
-        - "combined" en etapas tempranas (shaping fuerte).
-        - "raw" en la etapa final (señal real del juego).
+        "raw" o "combined". Es el mismo durante todo el entrenamiento.
     """
 
     def _init():
@@ -36,7 +34,7 @@ def crear_entorno(target_tile=2048, seed=0, reward_type="raw"):
             size=4,
             target_tile=target_tile,
             observation_type="log2",
-            reward_type=reward_type,   # 🔧 MEJORA: reward por etapa
+            reward_type=reward_type,
             max_episode_steps=2000,
         )
         # Monitor registra recompensas/episodios para TensorBoard y EvalCallback
@@ -49,30 +47,36 @@ def crear_entorno(target_tile=2048, seed=0, reward_type="raw"):
 
 
 # ============================================================
-# ENTRENAMIENTO CON CURRICULUM
+# ENTRENAMIENTO CON / SIN CURRICULUM
 # ============================================================
 
-def entrenar(timesteps, eval_freq, seed, curriculum):
-    """
-    Entrena MaskablePPO, opcionalmente con curriculum learning.
+def nombre_ejecucion(reward_type, curriculum, seed):
+    """Nombre único de una ejecución (lo usa también main.py)."""
+    modo = "curriculum" if curriculum else "sin_curriculum"
+    return f"ppo_{reward_type}_{modo}_s{seed}"
 
-    Curriculum implementado (3 mejoras clave sobre la versión original):
-      1. 🔧 Cada etapa cambia el *reward_type*, no solo el target_tile.
-         Así el agente aprende primero con shaping (combined) y afina
-         al final con la recompensa real (raw).
-      2. 🔧 Al terminar cada etapa se carga el *mejor* modelo guardado
-         por MaskableEvalCallback, no el último estado (que puede
-         haber empeorado tras el pico).
-      3. 🔧 Los logs y el best_model se separan por etapa para poder
-         comparar el progreso etapa a etapa en TensorBoard.
+
+def entrenar(timesteps, eval_freq, seed, curriculum,
+             reward_type="raw", invalid_penalty=0.0):
+    """
+    Entrena MaskablePPO con UN tipo de recompensa de principio a fin,
+    opcionalmente con curriculum learning.
+
+    - reward_type: "raw" o "combined"; es el mismo en todas las etapas.
+    - curriculum:  si True, el target_tile sube 128 → 512 → 2048;
+                   si False, se entrena directamente con 2048.
+    - invalid_penalty: no se usa (MaskablePPO nunca elige movimientos
+                   inválidos); se acepta para que todos los algoritmos
+                   se llamen igual desde main.py.
+
+    Al terminar cada etapa se carga el *mejor* modelo guardado por
+    MaskableEvalCallback, no el último estado (que puede haber
+    empeorado tras el pico). Los logs y el best_model se separan por
+    etapa para poder comparar el progreso en TensorBoard.
     """
 
     # -------- Nombres de ficheros / carpetas --------
-    nombre = (
-        f"ppo_curriculum_s{seed}"
-        if curriculum
-        else f"ppo_s{seed}"
-    )
+    nombre = nombre_ejecucion(reward_type, curriculum, seed)
 
     os.makedirs("models", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
@@ -80,16 +84,16 @@ def entrenar(timesteps, eval_freq, seed, curriculum):
     ruta_modelo = f"models/{nombre}"
 
     # -------- Definición de etapas (target_tile, reward_type) --------
-    # 🔧 MEJORA: cada etapa es una tupla (objetivo, tipo de recompensa)
+    # El reward_type es el mismo en todas las etapas.
     if curriculum:
         etapas = [
-            (128,  "combined"),   # etapa 1: fácil + shaping fuerte
-            (512,  "combined"),   # etapa 2: medio + shaping
-            (2048, "raw"),        # etapa 3: objetivo real + señal cruda
+            (128,  reward_type),   # etapa 1: fácil
+            (512,  reward_type),   # etapa 2: medio
+            (2048, reward_type),   # etapa 3: objetivo real
         ]
     else:
-        # Sin curriculum: una sola etapa con el objetivo final y reward raw
-        etapas = [(2048, "raw")]
+        # Sin curriculum: una sola etapa con el objetivo final
+        etapas = [(2048, reward_type)]
 
     # -------- Reparto de timesteps entre etapas --------
     pasos_etapa = [timesteps // len(etapas)] * len(etapas)
@@ -135,7 +139,7 @@ def entrenar(timesteps, eval_freq, seed, curriculum):
             modelo.set_env(env)
 
         # -------- Callback de evaluación --------
-        # 🔧 MEJORA: best_model y logs separados por etapa
+        # best_model y logs separados por etapa
         best_dir = f"{ruta_modelo}_etapa{etapa}"
         callback = MaskableEvalCallback(
             eval_env,
@@ -150,11 +154,11 @@ def entrenar(timesteps, eval_freq, seed, curriculum):
         modelo.learn(
             total_timesteps=pasos,
             callback=callback,
-            reset_num_timesteps=False,         # continuar contador global
-            tb_log_name=f"{nombre}_etapa{etapa}",  # 🔧 logs separados
+            reset_num_timesteps=False,             # continuar contador global
+            tb_log_name=f"{nombre}_etapa{etapa}",  # logs separados
         )
 
-        # -------- 🔧 MEJORA: transferir el MEJOR modelo --------
+        # -------- Transferir el MEJOR modelo --------
         # MaskableEvalCallback guarda el modelo con mayor recompensa media
         # de evaluación en best_dir/best_model.zip. Si existe, lo cargamos
         # para la siguiente etapa en lugar de arrastrar el último estado.
@@ -206,9 +210,16 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--reward",
+        choices=["raw", "combined"],
+        default="raw",
+        help="Tipo de recompensa durante TODO el entrenamiento.",
+    )
+
+    parser.add_argument(
         "--curriculum",
         action="store_true",
-        help="Activa el curriculum (128→512→2048 con reward combined→raw).",
+        help="Activa el curriculum (target_tile 128→512→2048).",
     )
 
     args = parser.parse_args()
@@ -218,4 +229,5 @@ if __name__ == "__main__":
         args.eval_freq,
         args.seed,
         args.curriculum,
+        args.reward,
     )

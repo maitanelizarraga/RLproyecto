@@ -53,26 +53,31 @@ def crear_entorno(target_tile=2048, seed=0, reward_type="raw", invalid_penalty=1
 
 
 # ============================================================
-# ENTRENAMIENTO CON CURRICULUM
+# ENTRENAMIENTO CON / SIN CURRICULUM
 # ============================================================
 
-def entrenar(timesteps, eval_freq, seed, curriculum, invalid_penalty):
-    """
-    Entrena A2C, opcionalmente con curriculum learning.
+def nombre_ejecucion(reward_type, curriculum, seed):
+    """Nombre único de una ejecución (lo usa también main.py)."""
+    modo = "curriculum" if curriculum else "sin_curriculum"
+    return f"a2c_{reward_type}_{modo}_s{seed}"
 
-    Misma estructura que PPO.py para que la comparación sea justa:
-      1. Cada etapa cambia el target_tile y el reward_type.
-      2. Al terminar cada etapa se carga el mejor modelo guardado
-         por EvalCallback, no el último estado.
-      3. Los logs y el best_model se separan por etapa.
+
+def entrenar(timesteps, eval_freq, seed, curriculum,
+             reward_type="raw", invalid_penalty=1.0):
+    """
+    Entrena A2C con UN tipo de recompensa de principio a fin,
+    opcionalmente con curriculum learning.
+
+    - reward_type: "raw" o "combined"; es el mismo en todas las etapas.
+    - curriculum:  si True, el target_tile sube 128 → 512 → 2048;
+                   si False, se entrena directamente con 2048.
+    Misma estructura que PPO.py para que la comparación sea justa.
+    Al terminar cada etapa se carga el mejor modelo guardado por
+    EvalCallback, y los logs y el best_model se separan por etapa.
     """
 
     # -------- Nombres de ficheros / carpetas --------
-    nombre = (
-        f"a2c_curriculum_s{seed}"
-        if curriculum
-        else f"a2c_s{seed}"
-    )
+    nombre = nombre_ejecucion(reward_type, curriculum, seed)
 
     os.makedirs("models", exist_ok=True)
     os.makedirs("logs", exist_ok=True)
@@ -80,15 +85,16 @@ def entrenar(timesteps, eval_freq, seed, curriculum, invalid_penalty):
     ruta_modelo = f"models/{nombre}"
 
     # -------- Definición de etapas (target_tile, reward_type) --------
+    # El reward_type es el mismo en todas las etapas.
     if curriculum:
         etapas = [
-            (128,  "combined"),   # etapa 1: fácil + shaping fuerte
-            (512,  "combined"),   # etapa 2: medio + shaping
-            (2048, "raw"),        # etapa 3: objetivo real + señal cruda
+            (128,  reward_type),   # etapa 1: fácil
+            (512,  reward_type),   # etapa 2: medio
+            (2048, reward_type),   # etapa 3: objetivo real
         ]
     else:
-        # Sin curriculum: una sola etapa con el objetivo final y reward raw
-        etapas = [(2048, "raw")]
+        # Sin curriculum: una sola etapa con el objetivo final
+        etapas = [(2048, reward_type)]
 
     # -------- Reparto de timesteps entre etapas --------
     pasos_etapa = [timesteps // len(etapas)] * len(etapas)
@@ -207,9 +213,16 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        "--reward",
+        choices=["raw", "combined"],
+        default="raw",
+        help="Tipo de recompensa durante TODO el entrenamiento.",
+    )
+
+    parser.add_argument(
         "--curriculum",
         action="store_true",
-        help="Activa el curriculum (128→512→2048 con reward combined→raw).",
+        help="Activa el curriculum (target_tile 128→512→2048).",
     )
 
     parser.add_argument(
@@ -226,5 +239,6 @@ if __name__ == "__main__":
         args.eval_freq,
         args.seed,
         args.curriculum,
+        args.reward,
         args.invalid_penalty,
     )
