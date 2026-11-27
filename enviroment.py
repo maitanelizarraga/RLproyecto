@@ -110,10 +110,9 @@ class Game2048Env(gym.Env):
                 dtype=np.float32
             )
 
-    # --------------------------------------------------
+    
     # OBSERVATIONS
-    # --------------------------------------------------
-
+       
     #devuelve al agente la tabla según lo que se haya especificado
     def _get_obs(self):
 
@@ -156,10 +155,9 @@ class Game2048Env(gym.Env):
 
             return obs
 
-    # --------------------------------------------------
+    
     # GAME LOGIC
-    # --------------------------------------------------
-
+       
     #añade la nueva ficha en un espacio aleatorio de las celdas vacias (90 para valor 2 y 10 para el 4)
     def _add_new_tile(self):
 
@@ -230,7 +228,7 @@ class Game2048Env(gym.Env):
             board = board.T
 
         elif action == 3:
-            board = np.fliplr(board.T) #CORREGIDO: antes flipud(board.T), que mezclaba las columnas
+            board = np.fliplr(board.T) #antes flipud(board.T), que mezclaba las columnas
 
         total_score = 0
 
@@ -251,7 +249,7 @@ class Game2048Env(gym.Env):
             board = board.T
 
         elif action == 3:
-            board = np.fliplr(board).T #CORREGIDO: inversa exacta de fliplr(board.T)
+            board = np.fliplr(board).T #inversa exacta de fliplr(board.T)
 
         return board.copy(), total_score
 
@@ -279,10 +277,9 @@ class Game2048Env(gym.Env):
 
         return score, changed
 
-    # --------------------------------------------------
+    
     # VALID ACTIONS / MASKING
-    # --------------------------------------------------
-
+       
     def action_masks(self):
 
         masks = np.zeros(4, dtype=bool)
@@ -306,10 +303,9 @@ class Game2048Env(gym.Env):
 
         return not np.any(self.action_masks())
 
-    # --------------------------------------------------
+    
     # REWARD SHAPING
-    # --------------------------------------------------
-
+       
     def _get_reward(self, merge_score, valid_move):
 
         if not valid_move:
@@ -377,10 +373,9 @@ class Game2048Env(gym.Env):
 
         return float(reward)
 
-    # --------------------------------------------------
+    
     # RESET
-    # --------------------------------------------------
-
+       
     def reset(self, seed=None, options=None):
 
         super().reset(seed=seed)
@@ -405,10 +400,9 @@ class Game2048Env(gym.Env):
 
         return self._get_obs(), info
 
-    # --------------------------------------------------
-    # STEP
-    # --------------------------------------------------
-
+    
+     # STEP
+       
     def step(self, action):
 
         if not self.action_space.contains(action):
@@ -427,7 +421,7 @@ class Game2048Env(gym.Env):
             or np.max(self.board) >= self.target_tile
         )
 
-        #CORREGIDO: antes era siempre False y un movimiento invalido repetido no acababa nunca
+        # antes era siempre False y un movimiento invalido repetido no acababa nunca
         truncated = bool(
             self.total_steps >= self.max_episode_steps
             and not terminated
@@ -451,10 +445,9 @@ class Game2048Env(gym.Env):
             info
         )
 
-    # --------------------------------------------------
+    
     # RENDER
-    # --------------------------------------------------
-
+       
     def render(self):
 
         print("\n" + "=" * 30)
